@@ -1,0 +1,27 @@
+- hosts: database_replica
+  vars:
+    pgpass_loc: "~/.pgpass"
+    psql_opts:  "-h localhost -d {{ pg_database }} -U {{ pg_username }} -w -t"
+    psql_query: 'SELECT CASE WHEN pg_last_xlog_receive_location() = pg_last_xlog_replay_location() THEN 0 ELSE EXTRACT (EPOCH FROM now() - pg_last_xact_replay_timestamp()) END AS log_delay;'
+    threshold:  "10"
+  tasks:
+    - name: Creating .pgpass
+      copy:
+        content: "localhost:{{ pg_port }}:{{ pg_database }}:{{ pg_username }}:{{ pg_password }}"
+        dest: "{{ pgpass_loc }}"
+        mode: "0600"
+      no_log: True
+
+    - name: Running psql Query
+      shell: 'echo "{{ psql_query }}" | PGPASSFILE={{ pgpass_loc }} psql {{ psql_opts }}'
+      register: psql_out
+
+    - name: Remove .pgpass
+      file:
+        path: "{{ pgpass_loc }}"
+        state: absent
+
+    - name: Debug psql Output
+      debug:
+        var: psql_out.stdout
+      failed_when: "psql_out.stdout|int >= threshold|int"
